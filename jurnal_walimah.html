@@ -47,6 +47,18 @@
             <p class="mt-4 text-indigo-700 font-semibold">Memuatkan data Syahmi...</p>
         </div>
     </div>
+    
+    <!-- Error Modal for GitHub Pages Sync Failure -->
+    <div id="sync-error-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-50 z-50 items-center justify-center">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4 text-center">
+            <i data-lucide="alert-triangle" class="w-12 h-12 text-red-500 mx-auto mb-4"></i>
+            <h3 class="text-xl font-bold text-red-700 mb-3">SYNC GAGAL (PENTING!)</h3>
+            <p class="text-gray-600 mb-4 text-sm">Aplikasi gagal berhubung dengan Cloud Database. Sila pastikan anda menggunakan LINK GITHUB PAGES yang betul.</p>
+            <p class="text-gray-600 mb-6 text-sm font-semibold">Sila cuba *refresh* (muat semula) laman ini sekali lagi.</p>
+            <button onclick="window.location.reload(true)" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Muat Semula Apps</button>
+        </div>
+    </div>
+
 
     <div id="app-container" class="max-w-4xl mx-auto hidden">
         <h1 class="text-3xl font-extrabold text-gray-900 mb-2">Jurnal Walimah Syahmi</h1>
@@ -258,7 +270,7 @@
         let firebaseConfig;
         try {
             const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-            // Fallback Project ID untuk kegunaan di local machine (tanpa collaboration)
+            // Fallback Project ID
             firebaseConfig = rawConfig ? JSON.parse(rawConfig) : { projectId: "local-syahmi-walimah-dummy-12345" };
         } catch (e) {
             console.error("Failed to parse firebase config, using dummy config.", e);
@@ -270,7 +282,7 @@
         let db, auth, userId = null;
         let isAuthReady = false;
         let isOfflineMode = false; 
-        let userName = localStorage.getItem('userName') || null; // Dapatkan nama pengguna dari Local Storage
+        let userName = localStorage.getItem('userName') || null;
 
         // --- CONSTANTS ---
         const WEDDING_DATE = new Date('2026-06-05T00:00:00'); 
@@ -284,10 +296,11 @@
         // --- DOM Elements ---
         const appContainer = document.getElementById('app-container');
         const loadingIndicator = document.getElementById('loading-indicator');
-        const userDisplayNameEl = document.getElementById('user-display-name'); // Updated element ID
+        const userDisplayNameEl = document.getElementById('user-display-name');
         const syncStatusEl = document.getElementById('sync-status');
         const tabButtons = document.querySelectorAll('.tab-button');
         const tabContents = document.querySelectorAll('.tab-content');
+        const syncErrorModal = document.getElementById('sync-error-modal'); // NEW
 
         // Countdown DOM (Umrah)
         const umrahTargetDisplay = document.getElementById('umrah-target-display');
@@ -327,7 +340,7 @@
         const modalConfirmBtn = document.getElementById('modal-confirm-btn');
         const modalCancelBtn = document.getElementById('modal-cancel-btn');
         
-        const namePromptModal = document.getElementById('name-prompt-modal'); // Name Prompt
+        const namePromptModal = document.getElementById('name-prompt-modal');
         const userNameInput = document.getElementById('user-name-input');
         const modalSetNameBtn = document.getElementById('modal-set-name-btn');
 
@@ -350,6 +363,10 @@
                 localStorage.setItem('userName', userName);
                 userDisplayNameEl.textContent = userName;
                 namePromptModal.classList.remove('open');
+                // Force reload if name is set AND currently in Offline mode (to try connection again)
+                if (isOfflineMode) {
+                    window.location.reload(true);
+                }
             }
         });
         
@@ -360,7 +377,27 @@
                 showNamePrompt();
             }
             userDisplayNameEl.textContent = userName || 'Guest';
+            
+            // Tentukan mod operasi
+            const isGitHubPages = firebaseConfig.projectId !== "local-syahmi-walimah-dummy-12345";
+            
+            // Jika BUKAN GitHub Pages (fail dibuka lokal), kita set Offline Mode
+            if (!isGitHubPages) {
+                isOfflineMode = true;
+                userId = "LOCAL_USER";
+                userDisplayNameEl.textContent = userName + " (OFFLINE)";
+                syncStatusEl.textContent = 'OFF';
+                syncStatusEl.classList.remove('text-green-500');
+                syncStatusEl.classList.add('text-red-500');
+                
+                loadingIndicator.classList.add('hidden');
+                appContainer.classList.remove('hidden');
+                setupLocalListeners(); 
+                return; // Tamatkan inisialisasi Firebase
+            }
 
+
+            // --- Start Online Mode (GitHub Pages) ---
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -376,44 +413,32 @@
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
-                        // HANYA SET SYNC ON jika berjaya authenticate dan BUKAN menggunakan dummy project ID
-                        if (firebaseConfig.projectId !== "local-syahmi-walimah-dummy-12345") {
-                             syncStatusEl.textContent = 'ON';
-                             syncStatusEl.classList.remove('text-red-500');
-                             syncStatusEl.classList.add('text-green-500');
-                             setupFirestoreListeners();
-                        } else {
-                            isOfflineMode = true;
-                            syncStatusEl.textContent = 'OFF';
-                        }
+                        // HANYA SET SYNC ON jika berjaya authenticate
+                        syncStatusEl.textContent = 'ON';
+                        syncStatusEl.classList.remove('text-red-500');
+                        syncStatusEl.classList.add('text-green-500');
+                        setupFirestoreListeners();
                     } else {
-                        // Fallback user ID if sign-in fails
-                        userId = crypto.randomUUID();
-                        isOfflineMode = true; // Force offline mode if auth fails
-                        syncStatusEl.textContent = 'OFF';
+                        // Jika Auth gagal di GitHub Pages, ini masalah kritikal
+                        throw new Error("Authentication failed on GitHub Pages.");
                     }
                     isAuthReady = true;
                     loadingIndicator.classList.add('hidden');
                     appContainer.classList.remove('hidden');
-
-                    if (isOfflineMode) {
-                        setupLocalListeners(); 
-                    }
                 });
 
             } catch (error) {
-                // Critical failure, switch to Offline Mode
-                console.warn("Firebase failed. Switching to Offline (Local Storage) Mode.", error);
-                isOfflineMode = true;
-                userId = "LOCAL_USER";
-                userDisplayNameEl.textContent = userName + " (OFFLINE)";
+                // Critical failure: Firebase initialization/Auth failed on GitHub Pages
+                console.error("FATAL SYNC FAILURE:", error);
+                
+                // Show the specific error modal to guide user to reload
+                loadingIndicator.classList.add('hidden');
+                syncErrorModal.classList.add('open');
+                
+                // Tetapkan status kepada OFF untuk visual warning
                 syncStatusEl.textContent = 'OFF';
                 syncStatusEl.classList.remove('text-green-500');
                 syncStatusEl.classList.add('text-red-500');
-                
-                loadingIndicator.classList.add('hidden');
-                appContainer.classList.remove('hidden');
-                setupLocalListeners(); 
             }
         }
 
@@ -550,6 +575,8 @@
         // --- LOCAL CRUD IMPLEMENTATIONS ---
 
         function localAddTask() {
+            if (!userName) return showNamePrompt();
+
             const taskText = newTaskInput.value.trim();
             if (!taskText) return;
 
@@ -584,6 +611,8 @@
         }
 
         function localAddGuest() {
+            if (!userName) return showNamePrompt();
+
             const guestName = newGuestName.value.trim();
             const paxCount = parseInt(newGuestCount.value, 10);
             if (!guestName || isNaN(paxCount) || paxCount <= 0) return;
@@ -620,6 +649,8 @@
         }
 
         function localAddTransaction() {
+            if (!userName) return showNamePrompt();
+
             const description = newBudgetDescription.value.trim();
             const amount = parseFloat(newBudgetAmount.value);
             const type = newBudgetType.value;
@@ -1008,13 +1039,11 @@
                 renderChecklist(tasks);
             }, (error) => {
                 console.error("Error listening to checklist: ", error);
-                // Fallback to local storage if Firestore connection is lost after successful initial connection
-                isOfflineMode = true; 
-                syncStatusEl.textContent = 'OFF';
-                syncStatusEl.classList.remove('text-green-500');
-                syncStatusEl.classList.add('text-red-500');
-                setupLocalListeners(); 
-                taskListEl.innerHTML = '<li class="p-4 bg-red-100 text-center text-red-700 rounded-lg">Gagal memuatkan checklist. Mod Luar Talian diaktifkan.</li>';
+                // Jika listener gagal, force reload
+                if (window.location.protocol.includes('http')) {
+                    console.error("Forcing sync error modal due to listener failure on live URL.");
+                    document.getElementById('sync-error-modal').classList.add('open');
+                }
             });
 
             // 2. Guest List Listener
@@ -1027,7 +1056,6 @@
                 renderGuestList(guests);
             }, (error) => {
                 console.error("Error listening to guest list: ", error);
-                // Handled by checklist listener failure
             });
             
             // 3. Budget Tracker Listener
@@ -1040,7 +1068,6 @@
                 renderBudgetTracker(transactions);
             }, (error) => {
                 console.error("Error listening to budget tracker: ", error);
-                // Handled by checklist listener failure
             });
 
 
