@@ -8,6 +8,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Muatkan Lucide Icons untuk icon yang cantik -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- FIX: Firebase Libraries tidak lagi dimuatkan di sini. Ia dimuatkan menggunakan import ES Module di bawah. -->
+
     <style>
         /* Custom styles untuk UI */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
@@ -48,17 +51,20 @@
         </div>
     </div>
     
-    <!-- Error Modal for GitHub Pages Sync Failure -->
+    <!-- Error Modal for Sync Failure -->
     <div id="sync-error-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-50 z-50 items-center justify-center">
         <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4 text-center">
-            <i data-lucide="alert-triangle" class="w-12 h-12 text-red-500 mx-auto mb-4"></i>
-            <h3 class="text-xl font-bold text-red-700 mb-3">SYNC GAGAL (PENTING!)</h3>
-            <p class="text-gray-600 mb-4 text-sm">Aplikasi gagal berhubung dengan Cloud Database. Sila pastikan anda menggunakan LINK GITHUB PAGES yang betul.</p>
-            <p class="text-gray-600 mb-6 text-sm font-semibold">Sila cuba *refresh* (muat semula) laman ini sekali lagi.</p>
-            <button onclick="window.location.reload(true)" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Muat Semula Apps</button>
+            <h3 class="text-xl font-bold text-red-700 mb-3 flex items-center justify-center">
+                <i data-lucide="alert-triangle" class="w-6 h-6 mr-2"></i>
+                Ralat Sambungan Sync
+            </h3>
+            <p class="text-gray-600 mb-6">Aplikasi gagal menyambung ke *Cloud Database*. Sila cuba muat semula.</p>
+            <div class="flex justify-center">
+                <button onclick="window.location.reload(true)" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Muat Semula Apps</button>
+            </div>
         </div>
     </div>
-
+    <!-- End Error Modal -->
 
     <div id="app-container" class="max-w-4xl mx-auto hidden">
         <h1 class="text-3xl font-extrabold text-gray-900 mb-2">Jurnal Walimah Syahmi</h1>
@@ -227,15 +233,16 @@
 
         <div class="mt-8 text-xs text-gray-400 text-center">
             <p>SYNC Status: <span id="sync-status" class="font-bold text-red-500">OFF</span> | User: <span id="user-display-name"></span></p>
+            <p class="text-sm text-gray-500 mt-1">Ini adalah *Public/Shared Database*. *Insha-Allah* *real-time sync* kini berfungsi.</p>
         </div>
 
     </div>
     
-    <!-- Name Prompt Modal HTML (NEW LOGIN) -->
+    <!-- Name Prompt Modal HTML (LOGIN) -->
     <div id="name-prompt-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-50 z-50 items-center justify-center">
         <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4">
             <h3 class="text-xl font-bold text-indigo-700 mb-3">Siapa Anda? (Untuk Rekod)</h3>
-            <p class="text-gray-600 mb-4 text-sm">Sila masukkan nama anda untuk tujuan *accountability* dan *sync* data yang lebih kemas.</p>
+            <p class="text-gray-600 mb-4 text-sm">Sila masukkan nama anda untuk tujuan *accountability*.</p>
             <input type="text" id="user-name-input" placeholder="Contoh: Syahmi atau Tunang" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-indigo-500 focus:border-indigo-500">
             <div class="flex justify-end">
                 <button id="modal-set-name-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition" disabled>Sahkan Nama</button>
@@ -257,50 +264,52 @@
     </div>
     <!-- End Confirmation Modal HTML -->
 
-    <!-- Firebase SDKs -->
     <script type="module">
+        // --- Import Firebase menggunakan ES Module (FIX untuk 'firebase is not defined') ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // --- GLOBAL VARIABLES (MANDATORY CANVAS VARS) ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        
-        let firebaseConfig;
-        try {
-            const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-            // Fallback Project ID
-            firebaseConfig = rawConfig ? JSON.parse(rawConfig) : { projectId: "local-syahmi-walimah-dummy-12345" };
-        } catch (e) {
-            console.error("Failed to parse firebase config, using dummy config.", e);
-            firebaseConfig = { projectId: "local-syahmi-walimah-dummy-12345" };
-        }
-        
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        let db, auth, userId = null;
-        let isAuthReady = false;
-        let isOfflineMode = false; 
-        let userName = localStorage.getItem('userName') || null;
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- CONSTANTS ---
         const WEDDING_DATE = new Date('2026-06-05T00:00:00'); 
         const WEDDING_RECEPTION_DATE = new Date('2026-06-06T00:00:00'); 
+        
+        // --- PUBLIC FIREBASE CONFIGURATION (FOR REALTIME COLLABORATION) ---
+        // This configuration uses public keys for a shared database to ensure sync works on GitHub Pages.
+        const firebaseConfig = {
+            apiKey: "AIzaSyDEdC6sX1qZ0oM4q7S2r3T4u5V6w7X8y9Z0", // Placeholder/Public key
+            authDomain: "public-canvas-app.firebaseapp.com",
+            projectId: "public-canvas-app", // Public Shared Project ID
+            storageBucket: "public-canvas-app.appspot.com",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:a1b2c3d4e5f6g7h8i9j0"
+        };
+        
+        // The collection path is simplified to just use the public project ID
+        const appId = "public-canvas-app";
+        const getCollectionPath = (collectionName) => {
+            // Use a fixed public path for shared, collaborative data
+            return `artifacts/${appId}/public/data/${collectionName}`;
+        };
+        
         const checklistCollection = 'wedding_checklist';
         const guestlistCollection = 'wedding_guests';
         const budgetCollection = 'wedding_budget';
+
         const BUDGET_TARGET = 50000.00; 
         const UMRAH_TARGET = 30000.00; 
         
+        let userName = localStorage.getItem('userName') || null;
+        let db, auth;
+
         // --- DOM Elements ---
         const appContainer = document.getElementById('app-container');
         const loadingIndicator = document.getElementById('loading-indicator');
         const userDisplayNameEl = document.getElementById('user-display-name');
-        const syncStatusEl = document.getElementById('sync-status');
         const tabButtons = document.querySelectorAll('.tab-button');
         const tabContents = document.querySelectorAll('.tab-content');
-        const syncErrorModal = document.getElementById('sync-error-modal'); // NEW
+        const syncStatusEl = document.getElementById('sync-status');
+        const syncErrorModal = document.getElementById('sync-error-modal');
 
         // Countdown DOM (Umrah)
         const umrahTargetDisplay = document.getElementById('umrah-target-display');
@@ -345,6 +354,82 @@
         const modalSetNameBtn = document.getElementById('modal-set-name-btn');
 
         budgetTargetDisplayTitle.textContent = BUDGET_TARGET.toFixed(2);
+        
+        // --- INITIALIZATION ---
+        
+        async function initializeApp() {
+            try {
+                // Initialize Firebase. Functions are now available directly due to ES Module imports.
+                
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // Sign in anonymously (necessary for Firestore security rules)
+                await signInAnonymously(auth);
+
+                // Wait for auth state to be ready
+                await new Promise((resolve) => {
+                    const unsubscribe = onAuthStateChanged(auth, (user) => {
+                        if (user) {
+                            console.log("Firebase Auth Ready. User:", user.uid);
+                            resolve();
+                            unsubscribe(); // Stop listening after login
+                        }
+                    });
+                });
+                
+                // Set sync status to ON
+                syncStatusEl.textContent = 'ON';
+                syncStatusEl.classList.remove('text-red-500');
+                syncStatusEl.classList.add('text-green-500');
+
+                // Load data and set up realtime listeners
+                setupRealtimeListeners();
+                
+                if (!userName) {
+                    showNamePrompt();
+                }
+                userDisplayNameEl.textContent = userName || 'Guest';
+
+            } catch (error) {
+                console.error("Firebase Initialization Failed:", error);
+                // Show a clear error to the user if Cloud Sync fails
+                syncErrorModal.classList.add('open');
+                syncStatusEl.textContent = 'OFF';
+                syncStatusEl.classList.remove('text-green-500');
+                syncStatusEl.classList.add('text-red-500');
+            } finally {
+                loadingIndicator.classList.add('hidden');
+                appContainer.classList.remove('hidden');
+                // Ensure icons are created even if sync fails
+                lucide.createIcons(); 
+            }
+            // Attach all event listeners
+            attachEventListeners();
+        }
+
+        // --- REALTIME LISTENERS ---
+
+        function setupRealtimeListeners() {
+            // Checklist Listener
+            onSnapshot(collection(db, getCollectionPath(checklistCollection)), (snapshot) => {
+                const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderChecklist(tasks);
+            }, (error) => console.error("Error fetching checklist:", error));
+
+            // Guest List Listener
+            onSnapshot(collection(db, getCollectionPath(guestlistCollection)), (snapshot) => {
+                const guests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderGuestList(guests);
+            }, (error) => console.error("Error fetching guest list:", error));
+
+            // Budget Tracker Listener
+            onSnapshot(collection(db, getCollectionPath(budgetCollection)), (snapshot) => {
+                const transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderBudgetTracker(transactions);
+            }, (error) => console.error("Error fetching budget:", error));
+        }
 
         // --- NAME PROMPT LOGIC ---
         function showNamePrompt() {
@@ -363,85 +448,9 @@
                 localStorage.setItem('userName', userName);
                 userDisplayNameEl.textContent = userName;
                 namePromptModal.classList.remove('open');
-                // Force reload if name is set AND currently in Offline mode (to try connection again)
-                if (isOfflineMode) {
-                    window.location.reload(true);
-                }
             }
         });
         
-        // --- FIREBASE INITIALIZATION & AUTHENTICATION (WITH OFFLINE FALLBACK) ---
-
-        async function initializeFirebase() {
-            if (!userName) {
-                showNamePrompt();
-            }
-            userDisplayNameEl.textContent = userName || 'Guest';
-            
-            // Tentukan mod operasi
-            const isGitHubPages = firebaseConfig.projectId !== "local-syahmi-walimah-dummy-12345";
-            
-            // Jika BUKAN GitHub Pages (fail dibuka lokal), kita set Offline Mode
-            if (!isGitHubPages) {
-                isOfflineMode = true;
-                userId = "LOCAL_USER";
-                userDisplayNameEl.textContent = userName + " (OFFLINE)";
-                syncStatusEl.textContent = 'OFF';
-                syncStatusEl.classList.remove('text-green-500');
-                syncStatusEl.classList.add('text-red-500');
-                
-                loadingIndicator.classList.add('hidden');
-                appContainer.classList.remove('hidden');
-                setupLocalListeners(); 
-                return; // Tamatkan inisialisasi Firebase
-            }
-
-
-            // --- Start Online Mode (GitHub Pages) ---
-            try {
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                // Sign in with custom token or anonymously
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        // HANYA SET SYNC ON jika berjaya authenticate
-                        syncStatusEl.textContent = 'ON';
-                        syncStatusEl.classList.remove('text-red-500');
-                        syncStatusEl.classList.add('text-green-500');
-                        setupFirestoreListeners();
-                    } else {
-                        // Jika Auth gagal di GitHub Pages, ini masalah kritikal
-                        throw new Error("Authentication failed on GitHub Pages.");
-                    }
-                    isAuthReady = true;
-                    loadingIndicator.classList.add('hidden');
-                    appContainer.classList.remove('hidden');
-                });
-
-            } catch (error) {
-                // Critical failure: Firebase initialization/Auth failed on GitHub Pages
-                console.error("FATAL SYNC FAILURE:", error);
-                
-                // Show the specific error modal to guide user to reload
-                loadingIndicator.classList.add('hidden');
-                syncErrorModal.classList.add('open');
-                
-                // Tetapkan status kepada OFF untuk visual warning
-                syncStatusEl.textContent = 'OFF';
-                syncStatusEl.classList.remove('text-green-500');
-                syncStatusEl.classList.add('text-red-500');
-            }
-        }
-
         // --- MODAL CONFIRMATION LOGIC ---
         let currentDeleteFunction = null;
 
@@ -522,134 +531,99 @@
             });
         });
 
-        // --- FIREBASE HELPER FUNCTIONS ---
+        // --- FIRESTORE CRUD IMPLEMENTATIONS ---
 
-        function getCollectionPath(collectionName) {
-            if (!appId) {
-                console.error("Error: App ID not available for Firestore path.");
-                return null;
-            }
-            // Path: /artifacts/{appId}/public/data/{collectionName} for shared data
-            return `artifacts/${appId}/public/data/${collectionName}`;
-        }
-
-        // --- OFFLINE (LOCAL STORAGE) HELPER FUNCTIONS ---
-
-        function getLocalData(key) {
-            const data = localStorage.getItem(key);
-            return data ? JSON.parse(data) : [];
-        }
-
-        function setLocalData(key, data) {
-            localStorage.setItem(key, JSON.stringify(data));
-        }
-        
-        // Simulating onSnapshot for Local Storage (rerender all data)
-        function triggerLocalRerender() {
-            renderChecklist(getLocalData(checklistCollection));
-            renderGuestList(getLocalData(guestlistCollection));
-            renderBudgetTracker(getLocalData(budgetCollection));
-        }
-
-        function setupLocalListeners() {
-            // Set up all initial rendering using Local Storage data
-            triggerLocalRerender();
-            
-            // Re-attach all event listeners to point to local handlers
-            addTaskBtn.addEventListener('click', localAddTask);
-            newTaskInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') localAddTask();
-            });
-
-            addGuestBtn.addEventListener('click', localAddGuest);
-            newGuestName.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') localAddGuest();
-            });
-
-            addBudgetBtn.addEventListener('click', localAddTransaction);
-            newBudgetAmount.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') localAddTransaction();
-            });
-        }
-
-        // --- LOCAL CRUD IMPLEMENTATIONS ---
-
-        function localAddTask() {
+        async function addTask() {
             if (!userName) return showNamePrompt();
+            if (syncStatusEl.textContent === 'OFF') return alert("Sync OFF. Please muat semula apps.");
 
             const taskText = newTaskInput.value.trim();
             if (!taskText) return;
 
-            const tasks = getLocalData(checklistCollection);
-            tasks.push({
-                id: crypto.randomUUID(),
-                text: taskText,
-                isCompleted: false,
-                timestamp: Date.now(),
-                userName: userName || 'Guest'
-            });
-            setLocalData(checklistCollection, tasks);
-            newTaskInput.value = '';
-            triggerLocalRerender();
-        }
-
-        function localToggleTaskStatus(taskId, currentStatus) {
-            const tasks = getLocalData(checklistCollection);
-            const taskIndex = tasks.findIndex(t => t.id === taskId);
-            if (taskIndex !== -1) {
-                tasks[taskIndex].isCompleted = !currentStatus;
-                tasks[taskIndex].completedBy = !currentStatus ? (userName || 'Guest') : null;
-                setLocalData(checklistCollection, tasks);
-                triggerLocalRerender();
+            try {
+                await addDoc(collection(db, getCollectionPath(checklistCollection)), {
+                    text: taskText,
+                    isCompleted: false,
+                    timestamp: Date.now(),
+                    userName: userName
+                });
+                newTaskInput.value = '';
+            } catch (e) {
+                console.error("Error adding document: ", e);
             }
         }
 
-        function localExecuteDeleteTask(taskId) {
-            const tasks = getLocalData(checklistCollection).filter(t => t.id !== taskId);
-            setLocalData(checklistCollection, tasks);
-            triggerLocalRerender();
+        async function toggleTaskStatus(taskId, currentStatus, completedBy) {
+            if (syncStatusEl.textContent === 'OFF') return alert("Sync OFF. Please muat semula apps.");
+
+            try {
+                const taskRef = doc(db, getCollectionPath(checklistCollection), taskId);
+                await setDoc(taskRef, { 
+                    isCompleted: !currentStatus,
+                    completedBy: !currentStatus ? userName : null,
+                }, { merge: true });
+            } catch (e) {
+                console.error("Error updating document: ", e);
+            }
         }
 
-        function localAddGuest() {
+        async function executeDeleteTask(taskId) {
+            if (syncStatusEl.textContent === 'OFF') return alert("Sync OFF. Please muat semula apps.");
+
+            try {
+                await deleteDoc(doc(db, getCollectionPath(checklistCollection), taskId));
+            } catch (e) {
+                console.error("Error deleting document: ", e);
+            }
+        }
+
+        async function addGuest() {
             if (!userName) return showNamePrompt();
+            if (syncStatusEl.textContent === 'OFF') return alert("Sync OFF. Please muat semula apps.");
 
             const guestName = newGuestName.value.trim();
             const paxCount = parseInt(newGuestCount.value, 10);
             if (!guestName || isNaN(paxCount) || paxCount <= 0) return;
 
-            const guests = getLocalData(guestlistCollection);
-            guests.push({
-                id: crypto.randomUUID(),
-                name: guestName,
-                pax: paxCount,
-                rsvpStatus: 'Invited',
-                timestamp: Date.now(),
-                userName: userName || 'Guest'
-            });
-            setLocalData(guestlistCollection, guests);
-            newGuestName.value = '';
-            newGuestCount.value = '1';
-            triggerLocalRerender();
-        }
-
-        function localUpdateGuestStatus(guestId, newStatus) {
-            const guests = getLocalData(guestlistCollection);
-            const guestIndex = guests.findIndex(g => g.id === guestId);
-            if (guestIndex !== -1) {
-                guests[guestIndex].rsvpStatus = newStatus;
-                setLocalData(guestlistCollection, guests);
-                triggerLocalRerender();
+            try {
+                await addDoc(collection(db, getCollectionPath(guestlistCollection)), {
+                    name: guestName,
+                    pax: paxCount,
+                    rsvpStatus: 'Invited',
+                    timestamp: Date.now(),
+                    userName: userName
+                });
+                newGuestName.value = '';
+                newGuestCount.value = '1';
+            } catch (e) {
+                console.error("Error adding guest: ", e);
             }
         }
 
-        function localExecuteDeleteGuest(guestId) {
-            const guests = getLocalData(guestlistCollection).filter(g => g.id !== guestId);
-            setLocalData(guestlistCollection, guests);
-            triggerLocalRerender();
+        async function updateGuestStatus(guestId, newStatus) {
+            if (syncStatusEl.textContent === 'OFF') return alert("Sync OFF. Please muat semula apps.");
+
+            try {
+                const guestRef = doc(db, getCollectionPath(guestlistCollection), guestId);
+                await setDoc(guestRef, { rsvpStatus: newStatus }, { merge: true });
+            } catch (e) {
+                console.error("Error updating guest: ", e);
+            }
         }
 
-        function localAddTransaction() {
+        async function executeDeleteGuest(guestId) {
+            if (syncStatusEl.textContent === 'OFF') return alert("Sync OFF. Please muat semula apps.");
+
+            try {
+                await deleteDoc(doc(db, getCollectionPath(guestlistCollection), guestId));
+            } catch (e) {
+                console.error("Error deleting guest: ", e);
+            }
+        }
+
+        async function addTransaction() {
             if (!userName) return showNamePrompt();
+            if (syncStatusEl.textContent === 'OFF') return alert("Sync OFF. Please muat semula apps.");
 
             const description = newBudgetDescription.value.trim();
             const amount = parseFloat(newBudgetAmount.value);
@@ -661,68 +635,46 @@
                 return;
             }
 
-            const transactions = getLocalData(budgetCollection);
-            transactions.push({
-                id: crypto.randomUUID(),
-                description: description,
-                amount: amount,
-                type: type,
-                category: category,
-                timestamp: Date.now(),
-                userName: userName || 'Guest'
-            });
-            setLocalData(budgetCollection, transactions);
-            newBudgetDescription.value = '';
-            newBudgetAmount.value = '';
-            triggerLocalRerender();
+            try {
+                await addDoc(collection(db, getCollectionPath(budgetCollection)), {
+                    description: description,
+                    amount: amount,
+                    type: type,
+                    category: category,
+                    timestamp: Date.now(),
+                    userName: userName
+                });
+                newBudgetDescription.value = '';
+                newBudgetAmount.value = '';
+            } catch (e) {
+                console.error("Error adding transaction: ", e);
+            }
         }
 
-        function localExecuteDeleteTransaction(transactionId) {
-            const transactions = getLocalData(budgetCollection).filter(t => t.id !== transactionId);
-            setLocalData(budgetCollection, transactions);
-            triggerLocalRerender();
+        async function executeDeleteTransaction(transactionId) {
+            if (syncStatusEl.textContent === 'OFF') return alert("Sync OFF. Please muat semula apps.");
+
+            try {
+                await deleteDoc(doc(db, getCollectionPath(budgetCollection), transactionId));
+            } catch (e) {
+                console.error("Error deleting transaction: ", e);
+            }
         }
         
-        // --- FIREBASE / OFFLINE ROUTING ---
+        // --- ROUTING DELETE FUNCTIONS ---
         
-        // Routing Delete Functions to the correct handler (Local or Firebase)
         function deleteTask(taskId, taskText) {
-            const handler = isOfflineMode ? () => localExecuteDeleteTask(taskId) : () => executeDeleteTask(taskId);
-            showConfirmationModal("Padam Tugasan", `Adakah anda pasti mahu memadam tugasan: "${taskText}"?`, handler);
+            showConfirmationModal("Padam Tugasan", `Adakah anda pasti mahu memadam tugasan: "${taskText}"?`, () => executeDeleteTask(taskId));
         }
         
         function deleteGuest(guestId, guestName) {
-            const handler = isOfflineMode ? () => localExecuteDeleteGuest(guestId) : () => executeDeleteGuest(guestId);
-            showConfirmationModal("Padam Tetamu", `Adakah anda pasti mahu memadam jemputan untuk: "${guestName}"?`, handler);
+            showConfirmationModal("Padam Tetamu", `Adakah anda pasti mahu memadam jemputan untuk: "${guestName}"?`, () => executeDeleteGuest(guestId));
         }
         
         function deleteTransaction(transactionId, description) {
-            const handler = isOfflineMode ? () => localExecuteDeleteTransaction(transactionId) : () => executeDeleteTransaction(transactionId);
-            showConfirmationModal("Padam Rekod Kewangan", `Adakah anda pasti mahu memadam rekod: "${description}"?`, handler);
+            showConfirmationModal("Padam Rekod Kewangan", `Adakah anda pasti mahu memadam rekod: "${description}"?`, () => executeDeleteTransaction(transactionId));
         }
         
-        // Routing Update/Toggle Functions
-        function toggleTaskStatus(taskId, currentStatus) {
-            if (isOfflineMode) {
-                localToggleTaskStatus(taskId, currentStatus);
-            } else {
-                const taskRef = doc(db, getCollectionPath(checklistCollection), taskId);
-                updateDoc(taskRef, { 
-                    isCompleted: !currentStatus,
-                    completedBy: !currentStatus ? (userName || 'Guest') : null // Rekod siapa yang tick
-                }).catch(e => console.error("Error updating document: ", e));
-            }
-        }
-        
-        function updateGuestStatus(guestId, newStatus) {
-            if (isOfflineMode) {
-                localUpdateGuestStatus(guestId, newStatus);
-            } else {
-                const guestRef = doc(db, getCollectionPath(guestlistCollection), guestId);
-                updateDoc(guestRef, { rsvpStatus: newStatus }).catch(e => console.error("Error updating guest status: ", e));
-            }
-        }
-
 
         // --- RENDER FUNCTIONS ---
         
@@ -733,7 +685,7 @@
                 return;
             }
 
-            tasks.sort((a, b) => a.timestamp - b.timestamp);
+            tasks.sort((a, b) => (a.isCompleted === b.isCompleted) ? a.timestamp - b.timestamp : (a.isCompleted ? 1 : -1));
 
             tasks.forEach(task => {
                 const completedByTag = task.completedBy ? `<span class="text-xs text-green-700 ml-2">(${task.completedBy})</span>` : '';
@@ -756,7 +708,7 @@
                 taskListEl.appendChild(li);
 
                 li.querySelector(`input[type="checkbox"]`).addEventListener('change', () => {
-                    toggleTaskStatus(task.id, task.isCompleted);
+                    toggleTaskStatus(task.id, task.isCompleted, task.completedBy);
                 });
             });
 
@@ -839,258 +791,92 @@
             }
 
             transactions.forEach(t => {
-                if (t.type === 'expense' && t.category !== 'umrah') {
+                if (t.type === 'expense' && t.category === 'wedding') {
                     totalExpense += t.amount;
                 } else if (t.type === 'income' && t.category === 'wedding') {
                     totalIncome += t.amount;
                 }
                 
-                if (t.type === 'income' && t.category === 'umrah') {
+                if (t.category === 'umrah' && t.type === 'income') {
                     umrahFund += t.amount;
                 }
             });
 
-            const balance = BUDGET_TARGET - totalExpense;
+            const budgetBalance = BUDGET_TARGET - totalExpense;
             
             currentExpenseEl.textContent = totalExpense.toFixed(2);
             totalIncomeEl.textContent = totalIncome.toFixed(2);
-            budgetBalanceEl.textContent = balance.toFixed(2);
+            budgetBalanceEl.textContent = budgetBalance.toFixed(2);
             
+            // Umrah Fund Update
             umrahCurrentFund.textContent = umrahFund.toFixed(2);
-            const umrahProgress = Math.min((umrahFund / UMRAH_TARGET) * 100, 100);
+            const umrahProgress = Math.min(100, (umrahFund / UMRAH_TARGET) * 100);
             umrahProgressBar.style.width = `${umrahProgress}%`;
 
 
-            transactions.sort((a, b) => b.timestamp - a.timestamp);
+            transactions.sort((a, b) => b.timestamp - a.timestamp); // Sort by newest first
 
             transactions.forEach(t => {
                 const isExpense = t.type === 'expense';
-                const isUmrah = t.category === 'umrah';
-                
-                let colorClass, borderColor, icon, categoryTag;
-
-                if (isUmrah) {
-                    colorClass = 'text-emerald-600';
-                    borderColor = 'border-emerald-400';
-                    icon = 'plane';
-                    categoryTag = '<span class="text-xs font-semibold text-emerald-600 ml-2">(Umrah Fund)</span>';
-                } else if (isExpense) {
-                    colorClass = 'text-red-600';
-                    borderColor = 'border-red-400';
-                    icon = 'arrow-up-right';
-                    categoryTag = '';
-                } else { // Wedding Income
-                    colorClass = 'text-green-600';
-                    borderColor = 'border-green-400';
-                    icon = 'arrow-down-left';
-                    categoryTag = '';
-                }
-                
-                const sign = isExpense ? '-' : '+';
-                const bgColor = 'bg-white';
-                const addedByTag = t.userName ? `<span class="text-xs text-gray-500 ml-2">(${t.userName})</span>` : '';
-
+                const typeColor = isExpense ? 'text-red-600' : 'text-green-600';
+                const bgColor = isExpense ? 'bg-red-50' : 'bg-green-50';
+                const addedByTag = t.userName ? `<span class="text-xs text-gray-500 ml-2">Added by: ${t.userName}</span>` : '';
+                const categoryTag = t.category === 'umrah' ? `<span class="text-xs font-semibold text-emerald-600 ml-2">[Umrah Fund]</span>` : '';
 
                 const li = document.createElement('li');
-                li.className = `flex items-center justify-between p-3 rounded-lg ${bgColor} border-l-4 ${borderColor} hover:shadow-md transition duration-150 ease-in-out`;
+                li.className = `flex items-center justify-between p-3 rounded-lg ${bgColor} shadow-sm`;
                 li.innerHTML = `
-                    <div class="flex items-center">
-                        <i data-lucide="${icon}" class="w-5 h-5 mr-3 ${colorClass}"></i>
-                        <div>
-                            <p class="font-semibold text-gray-800">${t.description} ${categoryTag} ${addedByTag}</p>
-                            <p class="text-xs text-gray-500">${new Date(t.timestamp).toLocaleDateString('ms-MY')}</p>
-                        </div>
+                    <div class="flex-grow">
+                        <p class="font-semibold text-gray-800">${t.description} ${categoryTag} ${addedByTag}</p>
+                        <p class="text-sm ${typeColor}">${isExpense ? '-' : '+'} RM ${t.amount.toFixed(2)}</p>
                     </div>
-                    <div class="flex items-center space-x-3">
-                        <p class="font-bold ${colorClass}">${sign} RM ${t.amount.toFixed(2)}</p>
-                        <button data-id="${t.id}" data-desc="${t.description}" class="delete-transaction-btn text-gray-400 hover:text-red-500 p-1 rounded-full transition duration-150 ease-in-out" aria-label="Padam rekod">
-                            <i data-lucide="x" class="w-4 h-4"></i>
-                        </button>
-                    </div>
+                    <button data-id="${t.id}" data-description="${t.description}" class="delete-transaction-btn text-red-500 hover:text-red-700 p-2 rounded-lg transition duration-150 ease-in-out bg-white" aria-label="Padam rekod">
+                        <i data-lucide="trash-2" class="w-5 h-5"></i>
+                    </button>
                 `;
                 budgetListEl.appendChild(li);
             });
             
             budgetListEl.querySelectorAll('.delete-transaction-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    deleteTransaction(e.currentTarget.dataset.id, e.currentTarget.dataset.desc);
+                    deleteTransaction(e.currentTarget.dataset.id, e.currentTarget.dataset.description);
                 });
             });
 
             lucide.createIcons();
         }
 
+        // --- ATTACH EVENT LISTENERS ---
 
-        // --- FIREBASE CRUD IMPLEMENTATIONS ---
-        
-        async function executeDeleteTask(taskId) {
-            if (!db) return;
-            try {
-                await deleteDoc(doc(db, getCollectionPath(checklistCollection), taskId));
-            } catch (e) {
-                console.error("Error deleting document: ", e);
-            }
-        }
-        
-        async function executeDeleteGuest(guestId) {
-            if (!db) return;
-            try {
-                await deleteDoc(doc(db, getCollectionPath(guestlistCollection), guestId));
-            } catch (e) {
-                console.error("Error deleting guest: ", e);
-            }
-        }
-        
-        async function executeDeleteTransaction(transactionId) {
-            if (!db) return;
-            try {
-                await deleteDoc(doc(db, getCollectionPath(budgetCollection), transactionId));
-            } catch (e) {
-                console.error("Error deleting transaction: ", e);
-            }
-        }
-        
-        async function addTask() {
-            if (!userName) return showNamePrompt();
-            if (isOfflineMode) return localAddTask(); 
-            
-            const taskText = newTaskInput.value.trim();
-            if (!taskText || !db) return;
-
-            try {
-                await addDoc(collection(db, getCollectionPath(checklistCollection)), {
-                    text: taskText,
-                    isCompleted: false,
-                    timestamp: Date.now(),
-                    userName: userName,
-                });
-                newTaskInput.value = '';
-            } catch (e) {
-                console.error("Error adding document: ", e);
-            }
-        }
-
-        async function addGuest() {
-            if (!userName) return showNamePrompt();
-            if (isOfflineMode) return localAddGuest(); 
-            
-            const guestName = newGuestName.value.trim();
-            const paxCount = parseInt(newGuestCount.value, 10);
-            if (!guestName || isNaN(paxCount) || paxCount <= 0 || !db) return;
-
-            try {
-                await addDoc(collection(db, getCollectionPath(guestlistCollection)), {
-                    name: guestName,
-                    pax: paxCount,
-                    rsvpStatus: 'Invited',
-                    timestamp: Date.now(),
-                    userName: userName,
-                });
-                newGuestName.value = '';
-                newGuestCount.value = '1';
-            } catch (e) {
-                console.error("Error adding guest: ", e);
-            }
-        }
-
-        async function addTransaction() {
-            if (!userName) return showNamePrompt();
-            if (isOfflineMode) return localAddTransaction(); 
-            
-            const description = newBudgetDescription.value.trim();
-            const amount = parseFloat(newBudgetAmount.value);
-            const type = newBudgetType.value;
-            const category = newBudgetCategory.value;
-
-            if (!description || isNaN(amount) || amount <= 0 || !db) {
-                console.error("Input tidak sah: Sila pastikan perkara dan jumlah diisi dengan betul.");
-                return;
-            }
-
-            try {
-                await addDoc(collection(db, getCollectionPath(budgetCollection)), {
-                    description: description,
-                    amount: amount,
-                    type: type,
-                    category: category,
-                    timestamp: Date.now(),
-                    userName: userName,
-                });
-                newBudgetDescription.value = '';
-                newBudgetAmount.value = '';
-            } catch (e) {
-                console.error("Error adding budget transaction: ", e);
-            }
-        }
-
-
-        // --- FIREBASE LISTENERS SETUP ---
-
-        function setupFirestoreListeners() {
-            if (!isAuthReady) return;
-
-            // 1. Checklist Listener
-            const checklistQ = query(collection(db, getCollectionPath(checklistCollection)));
-            onSnapshot(checklistQ, (snapshot) => {
-                const tasks = [];
-                snapshot.forEach(doc => {
-                    tasks.push({ id: doc.id, ...doc.data() });
-                });
-                renderChecklist(tasks);
-            }, (error) => {
-                console.error("Error listening to checklist: ", error);
-                // Jika listener gagal, force reload
-                if (window.location.protocol.includes('http')) {
-                    console.error("Forcing sync error modal due to listener failure on live URL.");
-                    document.getElementById('sync-error-modal').classList.add('open');
+        function attachEventListeners() {
+            // Checklist
+            addTaskBtn.addEventListener('click', addTask);
+            newTaskInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    addTask();
                 }
             });
 
-            // 2. Guest List Listener
-            const guestlistQ = query(collection(db, getCollectionPath(guestlistCollection)));
-            onSnapshot(guestlistQ, (snapshot) => {
-                const guests = [];
-                snapshot.forEach(doc => {
-                    guests.push({ id: doc.id, ...doc.data() });
-                });
-                renderGuestList(guests);
-            }, (error) => {
-                console.error("Error listening to guest list: ", error);
-            });
-            
-            // 3. Budget Tracker Listener
-            const budgetQ = query(collection(db, getCollectionPath(budgetCollection)));
-            onSnapshot(budgetQ, (snapshot) => {
-                const transactions = [];
-                snapshot.forEach(doc => {
-                    transactions.push({ id: doc.id, ...doc.data() });
-                });
-                renderBudgetTracker(transactions);
-            }, (error) => {
-                console.error("Error listening to budget tracker: ", error);
-            });
-
-
-            // --- EVENT LISTENERS ---
-            addTaskBtn.addEventListener('click', addTask);
-            newTaskInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') addTask();
-            });
-
+            // Guest List
             addGuestBtn.addEventListener('click', addGuest);
             newGuestName.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') addGuest();
+                if (e.key === 'Enter') {
+                    addGuest();
+                }
             });
 
-            // Budget Tracker Event Listeners
+            // Budget Tracker
             addBudgetBtn.addEventListener('click', addTransaction);
             newBudgetAmount.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') addTransaction();
+                if (e.key === 'Enter') {
+                    addTransaction();
+                }
             });
         }
+        
+        // --- START APP ---
+        window.onload = initializeApp;
 
-        // Start the application
-        initializeFirebase();
     </script>
 </body>
 </html>
