@@ -214,10 +214,23 @@
 
 
         <div class="mt-8 text-xs text-gray-400 text-center">
-            <p>SYNC Status: <span id="sync-status" class="font-bold text-red-500">OFF</span> | User ID: <span id="user-display-id"></span></p>
+            <p>SYNC Status: <span id="sync-status" class="font-bold text-red-500">OFF</span> | User: <span id="user-display-name"></span></p>
         </div>
 
     </div>
+    
+    <!-- Name Prompt Modal HTML (NEW LOGIN) -->
+    <div id="name-prompt-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-50 z-50 items-center justify-center">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4">
+            <h3 class="text-xl font-bold text-indigo-700 mb-3">Siapa Anda? (Untuk Rekod)</h3>
+            <p class="text-gray-600 mb-4 text-sm">Sila masukkan nama anda untuk tujuan *accountability* dan *sync* data yang lebih kemas.</p>
+            <input type="text" id="user-name-input" placeholder="Contoh: Syahmi atau Tunang" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-indigo-500 focus:border-indigo-500">
+            <div class="flex justify-end">
+                <button id="modal-set-name-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition" disabled>Sahkan Nama</button>
+            </div>
+        </div>
+    </div>
+    <!-- End Name Prompt Modal HTML -->
 
     <!-- Confirmation Modal HTML -->
     <div id="confirmation-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-50 z-50 items-center justify-center">
@@ -257,6 +270,7 @@
         let db, auth, userId = null;
         let isAuthReady = false;
         let isOfflineMode = false; 
+        let userName = localStorage.getItem('userName') || null; // Dapatkan nama pengguna dari Local Storage
 
         // --- CONSTANTS ---
         const WEDDING_DATE = new Date('2026-06-05T00:00:00'); 
@@ -266,13 +280,12 @@
         const budgetCollection = 'wedding_budget';
         const BUDGET_TARGET = 50000.00; 
         const UMRAH_TARGET = 30000.00; 
-        const UMRAH_INCOME_COLLECTION = 'umrah_income'; 
-
+        
         // --- DOM Elements ---
         const appContainer = document.getElementById('app-container');
         const loadingIndicator = document.getElementById('loading-indicator');
-        const userDisplayId = document.getElementById('user-display-id');
-        const syncStatusEl = document.getElementById('sync-status'); // NEW SYNC STATUS ELEMENT
+        const userDisplayNameEl = document.getElementById('user-display-name'); // Updated element ID
+        const syncStatusEl = document.getElementById('sync-status');
         const tabButtons = document.querySelectorAll('.tab-button');
         const tabContents = document.querySelectorAll('.tab-content');
 
@@ -307,19 +320,47 @@
         const totalIncomeEl = document.getElementById('total-income');
         const budgetBalanceEl = document.getElementById('budget-balance');
 
-        // Modal DOM
+        // Modal DOMs
         const modalEl = document.getElementById('confirmation-modal');
         const modalTitle = document.getElementById('modal-title');
         const modalMessage = document.getElementById('modal-message');
         const modalConfirmBtn = document.getElementById('modal-confirm-btn');
         const modalCancelBtn = document.getElementById('modal-cancel-btn');
         
+        const namePromptModal = document.getElementById('name-prompt-modal'); // Name Prompt
+        const userNameInput = document.getElementById('user-name-input');
+        const modalSetNameBtn = document.getElementById('modal-set-name-btn');
+
         budgetTargetDisplayTitle.textContent = BUDGET_TARGET.toFixed(2);
 
+        // --- NAME PROMPT LOGIC ---
+        function showNamePrompt() {
+            namePromptModal.classList.add('open');
+            userNameInput.focus();
+        }
 
+        userNameInput.addEventListener('input', () => {
+            modalSetNameBtn.disabled = userNameInput.value.trim().length === 0;
+        });
+
+        modalSetNameBtn.addEventListener('click', () => {
+            const name = userNameInput.value.trim();
+            if (name) {
+                userName = name;
+                localStorage.setItem('userName', userName);
+                userDisplayNameEl.textContent = userName;
+                namePromptModal.classList.remove('open');
+            }
+        });
+        
         // --- FIREBASE INITIALIZATION & AUTHENTICATION (WITH OFFLINE FALLBACK) ---
 
         async function initializeFirebase() {
+            if (!userName) {
+                showNamePrompt();
+            }
+            userDisplayNameEl.textContent = userName || 'Guest';
+
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -351,7 +392,6 @@
                         isOfflineMode = true; // Force offline mode if auth fails
                         syncStatusEl.textContent = 'OFF';
                     }
-                    userDisplayId.textContent = userId;
                     isAuthReady = true;
                     loadingIndicator.classList.add('hidden');
                     appContainer.classList.remove('hidden');
@@ -366,7 +406,7 @@
                 console.warn("Firebase failed. Switching to Offline (Local Storage) Mode.", error);
                 isOfflineMode = true;
                 userId = "LOCAL_USER";
-                userDisplayId.textContent = "Offline (Local Storage)";
+                userDisplayNameEl.textContent = userName + " (OFFLINE)";
                 syncStatusEl.textContent = 'OFF';
                 syncStatusEl.classList.remove('text-green-500');
                 syncStatusEl.classList.add('text-red-500');
@@ -519,6 +559,7 @@
                 text: taskText,
                 isCompleted: false,
                 timestamp: Date.now(),
+                userName: userName || 'Guest'
             });
             setLocalData(checklistCollection, tasks);
             newTaskInput.value = '';
@@ -530,6 +571,7 @@
             const taskIndex = tasks.findIndex(t => t.id === taskId);
             if (taskIndex !== -1) {
                 tasks[taskIndex].isCompleted = !currentStatus;
+                tasks[taskIndex].completedBy = !currentStatus ? (userName || 'Guest') : null;
                 setLocalData(checklistCollection, tasks);
                 triggerLocalRerender();
             }
@@ -553,6 +595,7 @@
                 pax: paxCount,
                 rsvpStatus: 'Invited',
                 timestamp: Date.now(),
+                userName: userName || 'Guest'
             });
             setLocalData(guestlistCollection, guests);
             newGuestName.value = '';
@@ -595,6 +638,7 @@
                 type: type,
                 category: category,
                 timestamp: Date.now(),
+                userName: userName || 'Guest'
             });
             setLocalData(budgetCollection, transactions);
             newBudgetDescription.value = '';
@@ -632,7 +676,10 @@
                 localToggleTaskStatus(taskId, currentStatus);
             } else {
                 const taskRef = doc(db, getCollectionPath(checklistCollection), taskId);
-                updateDoc(taskRef, { isCompleted: !currentStatus }).catch(e => console.error("Error updating document: ", e));
+                updateDoc(taskRef, { 
+                    isCompleted: !currentStatus,
+                    completedBy: !currentStatus ? (userName || 'Guest') : null // Rekod siapa yang tick
+                }).catch(e => console.error("Error updating document: ", e));
             }
         }
         
@@ -658,12 +705,18 @@
             tasks.sort((a, b) => a.timestamp - b.timestamp);
 
             tasks.forEach(task => {
+                const completedByTag = task.completedBy ? `<span class="text-xs text-green-700 ml-2">(${task.completedBy})</span>` : '';
+                const addedByTag = task.userName ? `<span class="text-xs text-gray-500 ml-2">Added by: ${task.userName}</span>` : '';
+
                 const li = document.createElement('li');
                 li.className = `flex items-center justify-between p-3 rounded-lg transition duration-150 ease-in-out ${task.isCompleted ? 'bg-green-100 line-through text-gray-600' : 'bg-white hover:bg-gray-50'}`;
                 li.innerHTML = `
                     <div class="flex items-center flex-grow">
                         <input type="checkbox" id="task-${task.id}" class="h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer" ${task.isCompleted ? 'checked' : ''}>
-                        <label for="task-${task.id}" class="ml-3 text-sm font-medium cursor-pointer">${task.text}</label>
+                        <div class="ml-3 text-sm font-medium">
+                            <label for="task-${task.id}" class="cursor-pointer">${task.text}</label>
+                            <div class="mt-0.5">${addedByTag} ${completedByTag}</div>
+                        </div>
                     </div>
                     <button data-id="${task.id}" data-text="${task.text}" class="delete-task-btn text-red-500 hover:text-red-700 p-1 rounded-full transition duration-150 ease-in-out" aria-label="Padam tugasan">
                         <i data-lucide="trash-2" class="w-5 h-5"></i>
@@ -707,12 +760,14 @@
                     'Invited': 'bg-yellow-100 border-yellow-500',
                     'Declined': 'bg-red-100 border-red-500'
                 };
+                const addedByTag = guest.userName ? `<span class="text-xs text-gray-500 ml-2">Added by: ${guest.userName}</span>` : '';
+
 
                 const li = document.createElement('li');
                 li.className = `flex flex-col md:flex-row items-start md:items-center justify-between p-3 rounded-lg border-l-4 ${statusColor[guest.rsvpStatus]} bg-white shadow-sm`;
                 li.innerHTML = `
                     <div class="flex-grow mb-2 md:mb-0">
-                        <p class="font-semibold text-gray-800">${guest.name}</p>
+                        <p class="font-semibold text-gray-800">${guest.name} ${addedByTag}</p>
                         <p class="text-sm text-gray-600">${guest.pax} Pax | Status: <span class="font-medium">${guest.rsvpStatus}</span></p>
                     </div>
                     <div class="flex space-x-2">
@@ -802,6 +857,8 @@
                 
                 const sign = isExpense ? '-' : '+';
                 const bgColor = 'bg-white';
+                const addedByTag = t.userName ? `<span class="text-xs text-gray-500 ml-2">(${t.userName})</span>` : '';
+
 
                 const li = document.createElement('li');
                 li.className = `flex items-center justify-between p-3 rounded-lg ${bgColor} border-l-4 ${borderColor} hover:shadow-md transition duration-150 ease-in-out`;
@@ -809,7 +866,7 @@
                     <div class="flex items-center">
                         <i data-lucide="${icon}" class="w-5 h-5 mr-3 ${colorClass}"></i>
                         <div>
-                            <p class="font-semibold text-gray-800">${t.description} ${categoryTag}</p>
+                            <p class="font-semibold text-gray-800">${t.description} ${categoryTag} ${addedByTag}</p>
                             <p class="text-xs text-gray-500">${new Date(t.timestamp).toLocaleDateString('ms-MY')}</p>
                         </div>
                     </div>
@@ -863,6 +920,7 @@
         }
         
         async function addTask() {
+            if (!userName) return showNamePrompt();
             if (isOfflineMode) return localAddTask(); 
             
             const taskText = newTaskInput.value.trim();
@@ -873,7 +931,7 @@
                     text: taskText,
                     isCompleted: false,
                     timestamp: Date.now(),
-                    userId: userId,
+                    userName: userName,
                 });
                 newTaskInput.value = '';
             } catch (e) {
@@ -882,6 +940,7 @@
         }
 
         async function addGuest() {
+            if (!userName) return showNamePrompt();
             if (isOfflineMode) return localAddGuest(); 
             
             const guestName = newGuestName.value.trim();
@@ -894,7 +953,7 @@
                     pax: paxCount,
                     rsvpStatus: 'Invited',
                     timestamp: Date.now(),
-                    userId: userId,
+                    userName: userName,
                 });
                 newGuestName.value = '';
                 newGuestCount.value = '1';
@@ -904,6 +963,7 @@
         }
 
         async function addTransaction() {
+            if (!userName) return showNamePrompt();
             if (isOfflineMode) return localAddTransaction(); 
             
             const description = newBudgetDescription.value.trim();
@@ -923,7 +983,7 @@
                     type: type,
                     category: category,
                     timestamp: Date.now(),
-                    userId: userId,
+                    userName: userName,
                 });
                 newBudgetDescription.value = '';
                 newBudgetAmount.value = '';
