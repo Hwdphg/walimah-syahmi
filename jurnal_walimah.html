@@ -214,7 +214,7 @@
 
 
         <div class="mt-8 text-xs text-gray-400 text-center">
-            <p>User ID: <span id="user-display-id"></span></p>
+            <p>SYNC Status: <span id="sync-status" class="font-bold text-red-500">OFF</span> | User ID: <span id="user-display-id"></span></p>
         </div>
 
     </div>
@@ -239,19 +239,16 @@
         import { getFirestore, doc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // setLogLevel('Debug'); // Boleh un-comment untuk debugging
-
         // --- GLOBAL VARIABLES (MANDATORY CANVAS VARS) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         
-        // FIX: Menyediakan fallback config jika apps dijalankan di luar persekitaran Canvas (seperti di Mac)
         let firebaseConfig;
         try {
             const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-            // Gunakan fallback Project ID jika config asal tidak ditemui/empty
+            // Fallback Project ID untuk kegunaan di local machine (tanpa collaboration)
             firebaseConfig = rawConfig ? JSON.parse(rawConfig) : { projectId: "local-syahmi-walimah-dummy-12345" };
         } catch (e) {
-            console.error("Gagal parse firebase config, menggunakan dummy config.", e);
+            console.error("Failed to parse firebase config, using dummy config.", e);
             firebaseConfig = { projectId: "local-syahmi-walimah-dummy-12345" };
         }
         
@@ -259,22 +256,23 @@
 
         let db, auth, userId = null;
         let isAuthReady = false;
-        let isOfflineMode = false; // NEW FLAG for local storage mode
+        let isOfflineMode = false; 
 
         // --- CONSTANTS ---
-        const WEDDING_DATE = new Date('2026-06-05T00:00:00'); // Tarikh Nikah Syahmi (5 Jun 2026)
-        const WEDDING_RECEPTION_DATE = new Date('2026-06-06T00:00:00'); // Tarikh Sanding (6 Jun 2026)
+        const WEDDING_DATE = new Date('2026-06-05T00:00:00'); 
+        const WEDDING_RECEPTION_DATE = new Date('2026-06-06T00:00:00'); 
         const checklistCollection = 'wedding_checklist';
         const guestlistCollection = 'wedding_guests';
         const budgetCollection = 'wedding_budget';
-        const BUDGET_TARGET = 50000.00; // Target budget Syahmi (RM50K, boleh diubah)
-        const UMRAH_TARGET = 30000.00; // NEW: Target Simpanan Umrah
-        const UMRAH_INCOME_COLLECTION = 'umrah_income'; // NEW: Collection utk link budget ke Umrah
+        const BUDGET_TARGET = 50000.00; 
+        const UMRAH_TARGET = 30000.00; 
+        const UMRAH_INCOME_COLLECTION = 'umrah_income'; 
 
         // --- DOM Elements ---
         const appContainer = document.getElementById('app-container');
         const loadingIndicator = document.getElementById('loading-indicator');
         const userDisplayId = document.getElementById('user-display-id');
+        const syncStatusEl = document.getElementById('sync-status'); // NEW SYNC STATUS ELEMENT
         const tabButtons = document.querySelectorAll('.tab-button');
         const tabContents = document.querySelectorAll('.tab-content');
 
@@ -282,7 +280,7 @@
         const umrahTargetDisplay = document.getElementById('umrah-target-display');
         const umrahCurrentFund = document.getElementById('umrah-current-fund');
         const umrahProgressBar = document.getElementById('umrah-progress-bar');
-        umrahTargetDisplay.textContent = UMRAH_TARGET.toFixed(2); // Set initial Umrah Target
+        umrahTargetDisplay.textContent = UMRAH_TARGET.toFixed(2); 
 
         // Checklist DOM
         const taskListEl = document.getElementById('task-list');
@@ -302,13 +300,12 @@
         const newBudgetDescription = document.getElementById('new-budget-description');
         const newBudgetAmount = document.getElementById('new-budget-amount');
         const newBudgetType = document.getElementById('new-budget-type');
-        const newBudgetCategory = document.getElementById('new-budget-category'); // NEW
+        const newBudgetCategory = document.getElementById('new-budget-category'); 
         const addBudgetBtn = document.getElementById('add-budget-btn');
         const budgetListEl = document.getElementById('budget-list');
         const currentExpenseEl = document.getElementById('current-expense');
         const totalIncomeEl = document.getElementById('total-income');
         const budgetBalanceEl = document.getElementById('budget-balance');
-
 
         // Modal DOM
         const modalEl = document.getElementById('confirmation-modal');
@@ -317,7 +314,6 @@
         const modalConfirmBtn = document.getElementById('modal-confirm-btn');
         const modalCancelBtn = document.getElementById('modal-cancel-btn');
         
-        // Set initial target display in the title
         budgetTargetDisplayTitle.textContent = BUDGET_TARGET.toFixed(2);
 
 
@@ -339,37 +335,49 @@
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
+                        // HANYA SET SYNC ON jika berjaya authenticate dan BUKAN menggunakan dummy project ID
+                        if (firebaseConfig.projectId !== "local-syahmi-walimah-dummy-12345") {
+                             syncStatusEl.textContent = 'ON';
+                             syncStatusEl.classList.remove('text-red-500');
+                             syncStatusEl.classList.add('text-green-500');
+                             setupFirestoreListeners();
+                        } else {
+                            isOfflineMode = true;
+                            syncStatusEl.textContent = 'OFF';
+                        }
                     } else {
                         // Fallback user ID if sign-in fails
                         userId = crypto.randomUUID();
+                        isOfflineMode = true; // Force offline mode if auth fails
+                        syncStatusEl.textContent = 'OFF';
                     }
                     userDisplayId.textContent = userId;
                     isAuthReady = true;
                     loadingIndicator.classList.add('hidden');
                     appContainer.classList.remove('hidden');
 
-                    // Start listening to Firestore once Auth is ready
-                    setupFirestoreListeners();
+                    if (isOfflineMode) {
+                        setupLocalListeners(); 
+                    }
                 });
 
             } catch (error) {
-                // Critical failure, switch to Offline Mode if using dummy config
-                if (firebaseConfig.projectId === "local-syahmi-walimah-dummy-12345") {
-                    console.warn("Firebase failed (expected for local file run). Switching to Offline (Local Storage) Mode.");
-                    isOfflineMode = true;
-                    userId = "LOCAL_USER";
-                    userDisplayId.textContent = "Offline (Tiada Kolaborasi)";
-                    loadingIndicator.classList.add('hidden');
-                    appContainer.classList.remove('hidden');
-                    setupLocalListeners(); // Setup Local Storage listeners
-                } else {
-                    console.error("Firebase Initialization Failed (CRITICAL):", error);
-                    loadingIndicator.innerHTML = '<p class="text-red-600">Error memuatkan Firebase. Sila semak konsol. Pastikan anda menjalankan apps ini dalam persekitaran yang betul.</p>';
-                }
+                // Critical failure, switch to Offline Mode
+                console.warn("Firebase failed. Switching to Offline (Local Storage) Mode.", error);
+                isOfflineMode = true;
+                userId = "LOCAL_USER";
+                userDisplayId.textContent = "Offline (Local Storage)";
+                syncStatusEl.textContent = 'OFF';
+                syncStatusEl.classList.remove('text-green-500');
+                syncStatusEl.classList.add('text-red-500');
+                
+                loadingIndicator.classList.add('hidden');
+                appContainer.classList.remove('hidden');
+                setupLocalListeners(); 
             }
         }
 
-        // --- MODAL CONFIRMATION LOGIC (Kekal Sama) ---
+        // --- MODAL CONFIRMATION LOGIC ---
         let currentDeleteFunction = null;
 
         function showConfirmationModal(title, message, deleteFunction) {
@@ -393,7 +401,7 @@
         });
 
 
-        // --- COUNTDOWN LOGIC (Kekal Sama) ---
+        // --- COUNTDOWN LOGIC ---
 
         function renderCountdown(targetDate, elementId, eventName) {
             const now = new Date().getTime();
@@ -405,7 +413,6 @@
                 return;
             }
 
-            // Calculations for days, hours, minutes and seconds
             const days = Math.floor(distance / (1000 * 60 * 60 * 24));
             const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
             const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
@@ -434,7 +441,7 @@
         setInterval(updateAllCountdowns, 1000);
         updateAllCountdowns();
 
-        // --- TAB SWITCHING LOGIC (Kekal Sama) ---
+        // --- TAB SWITCHING LOGIC ---
 
         tabButtons.forEach(button => {
             button.addEventListener('click', () => {
@@ -450,14 +457,14 @@
             });
         });
 
-        // --- FIREBASE HELPER FUNCTIONS (Kekal Sama untuk Canvas) ---
+        // --- FIREBASE HELPER FUNCTIONS ---
 
         function getCollectionPath(collectionName) {
             if (!appId) {
                 console.error("Error: App ID not available for Firestore path.");
                 return null;
             }
-            // Path: /artifacts/{appId}/public/data/{collectionName}
+            // Path: /artifacts/{appId}/public/data/{collectionName} for shared data
             return `artifacts/${appId}/public/data/${collectionName}`;
         }
 
@@ -500,7 +507,7 @@
             });
         }
 
-        // --- LOCAL CHECKLIST FUNCTIONS (Menggantikan Firebase) ---
+        // --- LOCAL CRUD IMPLEMENTATIONS ---
 
         function localAddTask() {
             const taskText = newTaskInput.value.trim();
@@ -533,8 +540,6 @@
             setLocalData(checklistCollection, tasks);
             triggerLocalRerender();
         }
-
-        // --- LOCAL GUEST LIST FUNCTIONS (Menggantikan Firebase) ---
 
         function localAddGuest() {
             const guestName = newGuestName.value.trim();
@@ -570,8 +575,6 @@
             setLocalData(guestlistCollection, guests);
             triggerLocalRerender();
         }
-
-        // --- LOCAL BUDGET FUNCTIONS (Menggantikan Firebase) ---
 
         function localAddTransaction() {
             const description = newBudgetDescription.value.trim();
@@ -628,7 +631,6 @@
             if (isOfflineMode) {
                 localToggleTaskStatus(taskId, currentStatus);
             } else {
-                // Firebase Toggle is implemented in the Firebase section below
                 const taskRef = doc(db, getCollectionPath(checklistCollection), taskId);
                 updateDoc(taskRef, { isCompleted: !currentStatus }).catch(e => console.error("Error updating document: ", e));
             }
@@ -638,17 +640,15 @@
             if (isOfflineMode) {
                 localUpdateGuestStatus(guestId, newStatus);
             } else {
-                // Firebase Update is implemented in the Firebase section below
                 const guestRef = doc(db, getCollectionPath(guestlistCollection), guestId);
                 updateDoc(guestRef, { rsvpStatus: newStatus }).catch(e => console.error("Error updating guest status: ", e));
             }
         }
 
 
-        // --- RENDER FUNCTIONS (Kekal Sama, hanya guna routing functions) ---
+        // --- RENDER FUNCTIONS ---
         
         function renderChecklist(tasks) {
-            // Re-implementing rendering logic here to attach the correct listeners
             taskListEl.innerHTML = '';
             if (tasks.length === 0) {
                 taskListEl.innerHTML = '<li class="p-4 bg-gray-50 text-center text-gray-500 rounded-lg">Tiada tugasan lagi. Tambah satu!</li>';
@@ -671,13 +671,11 @@
                 `;
                 taskListEl.appendChild(li);
 
-                // Attach listener to the routing function
                 li.querySelector(`input[type="checkbox"]`).addEventListener('change', () => {
                     toggleTaskStatus(task.id, task.isCompleted);
                 });
             });
 
-            // Attach listeners for delete buttons
             taskListEl.querySelectorAll('.delete-task-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     deleteTask(e.currentTarget.dataset.id, e.currentTarget.dataset.text);
@@ -688,7 +686,6 @@
         }
 
         function renderGuestList(guests) {
-            // Re-implementing rendering logic here to attach the correct listeners
             guestListEl.innerHTML = '';
             if (guests.length === 0) {
                 guestListEl.innerHTML = '<li class="p-4 bg-gray-50 text-center text-gray-500 rounded-lg">Tiada tetamu dalam senarai. Mula menjemput!</li>';
@@ -731,13 +728,11 @@
                 `;
                 guestListEl.appendChild(li);
 
-                // Attach listener to the routing function
                 li.querySelector('.guest-status-select').addEventListener('change', (e) => {
                     updateGuestStatus(guest.id, e.target.value);
                 });
             });
 
-            // Attach listeners for delete buttons
             guestListEl.querySelectorAll('.delete-guest-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     deleteGuest(e.currentTarget.dataset.id, e.currentTarget.dataset.name);
@@ -748,7 +743,6 @@
         }
 
         function renderBudgetTracker(transactions) {
-            // Re-implementing rendering logic here to attach the correct listeners
             budgetListEl.innerHTML = '';
             let totalExpense = 0;
             let totalIncome = 0;
@@ -839,9 +833,8 @@
         }
 
 
-        // --- FIREBASE CRUD (Hanya untuk rujukan, fungsi sebenar di-route oleh listener) ---
-
-        // Fungsi asal Firebase untuk CRUD (dipanggil oleh routing functions di atas)
+        // --- FIREBASE CRUD IMPLEMENTATIONS ---
+        
         async function executeDeleteTask(taskId) {
             if (!db) return;
             try {
@@ -870,7 +863,7 @@
         }
         
         async function addTask() {
-            if (isOfflineMode) return localAddTask(); // Route to local handler
+            if (isOfflineMode) return localAddTask(); 
             
             const taskText = newTaskInput.value.trim();
             if (!taskText || !db) return;
@@ -889,7 +882,7 @@
         }
 
         async function addGuest() {
-            if (isOfflineMode) return localAddGuest(); // Route to local handler
+            if (isOfflineMode) return localAddGuest(); 
             
             const guestName = newGuestName.value.trim();
             const paxCount = parseInt(newGuestCount.value, 10);
@@ -911,7 +904,7 @@
         }
 
         async function addTransaction() {
-            if (isOfflineMode) return localAddTransaction(); // Route to local handler
+            if (isOfflineMode) return localAddTransaction(); 
             
             const description = newBudgetDescription.value.trim();
             const amount = parseFloat(newBudgetAmount.value);
@@ -955,7 +948,13 @@
                 renderChecklist(tasks);
             }, (error) => {
                 console.error("Error listening to checklist: ", error);
-                taskListEl.innerHTML = '<li class="p-4 bg-red-100 text-center text-red-700 rounded-lg">Gagal memuatkan checklist. Sila cuba muat semula.</li>';
+                // Fallback to local storage if Firestore connection is lost after successful initial connection
+                isOfflineMode = true; 
+                syncStatusEl.textContent = 'OFF';
+                syncStatusEl.classList.remove('text-green-500');
+                syncStatusEl.classList.add('text-red-500');
+                setupLocalListeners(); 
+                taskListEl.innerHTML = '<li class="p-4 bg-red-100 text-center text-red-700 rounded-lg">Gagal memuatkan checklist. Mod Luar Talian diaktifkan.</li>';
             });
 
             // 2. Guest List Listener
@@ -968,7 +967,7 @@
                 renderGuestList(guests);
             }, (error) => {
                 console.error("Error listening to guest list: ", error);
-                guestListEl.innerHTML = '<li class="p-4 bg-red-100 text-center text-red-700 rounded-lg">Gagal memuatkan senarai tetamu. Sila cuba muat semula.</li>';
+                // Handled by checklist listener failure
             });
             
             // 3. Budget Tracker Listener
@@ -981,7 +980,7 @@
                 renderBudgetTracker(transactions);
             }, (error) => {
                 console.error("Error listening to budget tracker: ", error);
-                budgetListEl.innerHTML = '<li class="p-4 bg-red-100 text-center text-red-700 rounded-lg">Gagal memuatkan rekod kewangan. Sila cuba muat semula.</li>';
+                // Handled by checklist listener failure
             });
 
 
